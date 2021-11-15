@@ -1,0 +1,233 @@
+---
+title: "Cross-situational word learning with Brazilians"
+output: html_notebook
+author: "Rodrigo Dal Ben"
+date: 10/02/2021
+---
+
+Last update: 2021-11-15
+
+# Background
+
+#ADD DETAILS
+**Analyses reported by**: Dal Ben, R., Souza, D. H. & Hay, J. (under review). Combining statistics: The effects of phonotactics on cross-situational word learning. ##### ADD DETAILS HERE ######
+
+**OSF project**: https://osf.io/6fqzg/
+
+**Feedback and suggestions:** <dalbenwork@gmail.com>
+
+# Last packages update
+
+```{r}
+# YYYY-MM-DD
+last_upd <- "2021-11-10" 
+```
+
+# Load packages
+
+Here we use `groundhog` package to minimize conflicts among packages versions.
+
+```{r}
+# load 'groundhog', version:1.5.0, using R-4.1.2
+library(groundhog)
+
+# set vector w/ packages
+packages = c("tidyverse",
+             "tidylog", 
+             "boot",
+             "gmodels", 
+             "lme4", 
+             "brms",
+             "sjPlot", 
+             "patchwork", 
+             "janitor",
+             "RColorBrewer", 
+             "beepr", 
+             "here")
+
+# load packages
+groundhog::groundhog.library(pkg = packages, date = last_upd)
+
+# avoid scientific notation
+options(scipen = 0)
+
+# color-blind palette
+cb_pal = c("#E69F00", "#009E73", "#0072B2", "#D55E00", "#999999", "#000000") 
+```
+
+# Load data
+
+```{r}
+# load 
+load(here("02_data/tidy_data_cswl_br.rda"))
+
+# double check sample size (should be 30)
+data %>% distinct(p_n_unique) %>% count() # 30 participants
+```
+
+# Prepare data
+
+```{r}
+# filter test trials and set index for trials with rt > 3 SDs
+sd_comp <- 
+  data %>% 
+  filter(trial_type == "test cswl") %>% 
+  summarise(sd_1 = sd(rt, na.rm = T),
+            sd_3 = sd_1*3)
+
+data_clean_test <- 
+  data %>%
+  filter(trial_type == "test cswl") %>% 
+  filter(rt < mean(rt, na.rm = T) + sd_comp$sd_3) # 16 trials (2%) excluded
+
+## excluded trials summary
+data_clean_test %>% distinct(p_n_unique) %>% count() # 30 participants
+data_clean_test %>% group_by(p_n_unique) %>% summarise(n_trials = n())
+```
+
+# Demographics
+
+```{r}
+# summary data
+data_clean_test %>% 
+  group_by(p_n_unique) %>% 
+  slice_head() %>%
+  ungroup() %>% 
+  summarise(
+    n = n(), 
+    age_avg = mean(age),
+    age_sd = sd(age),
+    female = length(which(gender == "female")),
+  )
+```
+
+# Visualizations
+
+## Summary data
+
+```{r}
+# calculating mean for each block
+data_summ <- 
+  data_clean_test %>% 
+  group_by(p_n_unique, stimuli_set_pp) %>% 
+  summarise(
+    is_correct_avg = mean(is_correct),
+    is_correct_sum = sum(is_correct),
+    trials_n = 24,
+    rt = mean(rt)
+    ) %>% 
+  ungroup()
+
+# number of trials and proportion
+data_summ %>% group_by(stimuli_set_pp) %>% summarise(m = mean(is_correct_sum), sd = sd(is_correct_sum))
+data_summ %>% group_by(stimuli_set_pp) %>% summarise(m = mean(is_correct_avg), sd = sd(is_correct_avg))
+```
+
+## Mean correct 
+
+```{r}
+# sum
+sum_pp_plot <-  
+  data_summ %>% 
+  ggplot(aes(x = as_factor(""), y = is_correct_sum, color = stimuli_set_pp)) +
+  geom_violin(alpha = 0.6) +
+  geom_point(position = position_jitterdodge(jitter.width = 0.1, dodge.width = 0.9), 
+             alpha = 0.3) + 
+  stat_summary(fun.data = "mean_cl_boot", 
+               position = position_dodge(width = 0.9)) +
+  scale_y_continuous(breaks = seq(0, 24, 4)) +
+  geom_hline(yintercept = 6, linetype = "dashed") +
+  labs(y = "Mean number of correct selections", x = "Phonotactics") +
+  theme_bw()
+        
+sum_pp_plot
+
+# proportions
+avg_pp_plot <-  
+  data_summ %>% 
+  ggplot(aes(x = stimuli_set_pp, y = is_correct_avg, fill = stimuli_set_pp)) +
+  geom_violin(alpha = 0.3) +
+  geom_dotplot(binaxis = "y", stackdir = "up", dotsize = 0.5, alpha = 0.6) + 
+  stat_summary(fun.data = "mean_cl_boot", size = 0.5, position = position_nudge(x = -0.05, y = 0)) +
+  scale_y_continuous(breaks = seq(0, 1, 0.2)) +
+  scale_fill_manual(values = cb_pal) +
+  geom_hline(yintercept = 0.25, linetype = "dashed") +
+  labs(y = "Mean number of correct selections", x = "Phonotactics") +
+  theme_classic() +
+  theme(legend.position = "")
+        
+avg_pp_plot
+
+#ggsave(here("03_output_graphics/plot_pp.tiff"), 
+#       width = 15, height = 8, units = "cm", dpi = 300)
+
+# extract the stat_summary from the graph
+plot_stats <- ggplot_build(sum_pp_plot)$`data`[[2]] # trials
+plot_stats <- ggplot_build(avg_pp_plot)$`data`[[2]] # proportions
+```
+
+# Statistics
+
+## Descriptive
+
+```{r}
+stats_pp_summ <- 
+  data_summ %>%
+  group_by(stimuli_set_pp) %>% 
+  summarise(
+    is_corr = mean(is_correct_avg),
+    sd = sd(is_correct_avg), 
+    ci_low = gmodels::ci(is_correct_avg)[2],
+    ci_high = gmodels::ci(is_correct_avg)[3],
+    rt_mean = mean(rt)
+  )
+
+stats_pp_summ
+```
+
+## Inferential
+
+### Frequentist 
+
+```{r}
+## random slope and intercept - FAILED TO CONVERGE
+#mod0_cond_freq_exp1 <- 
+#  data_clean_test_exp1 %>% 
+#  glmer(is_correct ~ offset(logit(chance_level)) + stimuli_set_pp +
+#                (target_visual|p_n_unique),  
+#              data = .,
+#              family = "binomial")
+
+## random intercept
+mod1_pp_freq <- 
+  data_clean_test %>% 
+  glmer(is_correct ~ offset(logit(chance_level)) + stimuli_set_pp +
+                (1|target_visual) + (1|p_n_unique), 
+              data = .,
+              family = "binomial")
+
+summary(mod1_pp_freq)
+confint(mod1_pp_freq, method = "Wald")
+tab_model(mod1_pp_freq, title = "Fixed and random effects for Frequentist analysis [selection ~ chance level + phonotactics + (1|stimuli) + (1|participant)]", show.re.var = T, show.icc = T, show.p = F)#, file = here("03_output_graphics/mod_pp_freq.doc"))
+```
+
+### Bayesian
+
+```{r}
+mod0_pp_bay <- 
+  data_clean_test %>% 
+  brm(is_correct ~ offset(logit(chance_level)) + stimuli_set_pp + (target_visual|p_n_unique),
+            data = .,
+            family = "bernoulli",
+            iter = 4000,
+            chains = 4
+            )
+
+summary(mod0_pp_bay)
+tab_model(mod0_pp_bay, title = "Fixed and random effects Bayesian analysis [selection ~ chance level + phonotactics + (stimuli|participant)]", show.re.var = T, show.icc = T)#, file = here("03_output_graphics/mod_pp_bay.doc"))
+
+# let me know when model is done running
+beep(sound = 1, expr = NULL)
+```
+
+# THE END 
