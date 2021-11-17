@@ -201,6 +201,7 @@ stats_pp_summ
 ## random intercept
 mod1_pp_freq <- 
   data_clean_test %>% 
+  #mutate(stimuli_set_pp = factor(stimuli_set_pp, levels = c("PP+", "PP-"))) %>% # PP+ as baseline
   glmer(is_correct ~ offset(logit(chance_level)) + stimuli_set_pp +
                 (1|target_visual) + (1|p_n_unique), 
               data = .,
@@ -216,6 +217,7 @@ tab_model(mod1_pp_freq, title = "Fixed and random effects for Frequentist analys
 ```{r}
 mod0_pp_bay <- 
   data_clean_test %>% 
+  #mutate(stimuli_set_pp = factor(stimuli_set_pp, levels = c("PP+", "PP-"))) %>% # PP+ as baseline
   brm(is_correct ~ offset(logit(chance_level)) + stimuli_set_pp + (target_visual|p_n_unique),
             data = .,
             family = "bernoulli",
