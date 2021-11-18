@@ -10,7 +10,7 @@ Last update: 2021-11-15
 # Background
 
 #ADD DETAILS
-**Analyses reported by**: Dal Ben, R., Souza, D. H. & Hay, J. (under review). Combining statistics: The effects of phonotactics on cross-situational word learning. ##### ADD DETAILS HERE ######
+**Analyses reported by**: Dal Ben, R., Souza, D. H. & Hay, J. (under review). Combining statistics: The role of phonotactics on cross-situational word learning. ##### ADD DETAILS HERE ######
 
 **OSF project**: https://osf.io/6fqzg/
 
