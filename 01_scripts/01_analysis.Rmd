@@ -5,7 +5,7 @@ author: "Rodrigo Dal Ben"
 date: 10/02/2021
 ---
 
-Last update: 2021-11-15
+Last update: 2022-08-31
 
 # Background
 
@@ -16,26 +16,26 @@ Last update: 2021-11-15
 
 **Feedback and suggestions:** <dalbenwork@gmail.com>
 
-# Last packages update
+# Session info (as of last update)
 
-```{r}
-# YYYY-MM-DD
-last_upd <- "2021-11-10" 
-```
+R version 4.2.1 (2022-06-23)
+Platform: aarch64-apple-darwin20 (64-bit)
+Running under: macOS Monterey 12.5.1
 
 # Load packages
 
-Here we use `groundhog` package to minimize conflicts among packages versions.
+Here we add the option of using `groundhog` (v2.0.1) for reproducing the same R and packages' versions that we used when running the script on our end. To use `groundhog`, turn the switch to `T`. Otherwise, just run the code chunk (switch set to `F`).
 
 ```{r}
-# load 'groundhog', version:1.5.0, using R-4.1.2
-library(groundhog)
+# should R use groundhog
+use_groundhog <- F
 
 # set vector w/ packages
 packages = c("tidyverse",
              "tidylog", 
              "boot",
-             "gmodels", 
+             "gmodels",
+             "ggdist",
              "lme4", 
              "brms",
              "sjPlot", 
@@ -46,13 +46,23 @@ packages = c("tidyverse",
              "here")
 
 # load packages
-groundhog::groundhog.library(pkg = packages, date = last_upd)
+if(use_groundhog == T){
+  packages_date <- "2022-08-28" 
+  library(groundhog) # v2.0.1
+  groundhog::groundhog.library(pkg = packages, date = packages_date)
+  rm(packages, packages_date, use_groundhog) # clean
+}else{
+  # if necessary install
+  installed_packages <- packages %in% rownames(installed.packages())
+  if(any(installed_packages == F)){install.packages(packages[!installed_packages])}
+  # load packages
+  invisible(lapply(packages, library, character.only = T))
+  # clean
+  rm(installed_packages, packages, use_groundhog)
+}
 
 # avoid scientific notation
 options(scipen = 0)
-
-# color-blind palette
-cb_pal = c("#E69F00", "#009E73", "#0072B2", "#D55E00", "#999999", "#000000") 
 ```
 
 # Load data
@@ -63,26 +73,32 @@ load(here("02_data/tidy_data_cswl_br.rda"))
 
 # double check sample size (should be 30)
 data %>% distinct(p_n_unique) %>% count() # 30 participants
+
+# filter first test trial of each pair for each participant
+data_first_trial <- 
+  data %>% 
+  filter(trial_type == "test cswl") %>%
+  group_by(p_n_unique, target_audio_cswl) %>%
+  slice_head() %>% # select the first
+  ungroup() 
 ```
 
 # Prepare data
 
 ```{r}
-# filter test trials and set index for trials with rt > 3 SDs
+# filter test trials, the first trial for each pair, and set index for trials with rt > 3 SDs
 sd_comp <- 
-  data %>% 
-  filter(trial_type == "test cswl") %>% 
+  data_first_trial %>% 
   summarise(sd_1 = sd(rt, na.rm = T),
             sd_3 = sd_1*3)
 
 data_clean_test <- 
-  data %>%
-  filter(trial_type == "test cswl") %>% 
+  data_first_trial %>% 
   filter(rt < mean(rt, na.rm = T) + sd_comp$sd_3) # 16 trials (2%) excluded
 
 ## excluded trials summary
 data_clean_test %>% distinct(p_n_unique) %>% count() # 30 participants
-data_clean_test %>% group_by(p_n_unique) %>% summarise(n_trials = n())
+data_clean_test %>% group_by(p_n_unique) %>% summarise(n_trials = n()) # 12 trials, 1 for each pair
 ```
 
 # Demographics
@@ -113,7 +129,7 @@ data_summ <-
   summarise(
     is_correct_avg = mean(is_correct),
     is_correct_sum = sum(is_correct),
-    trials_n = 24,
+    trials_n = 12,
     rt = mean(rt)
     ) %>% 
   ungroup()
@@ -124,6 +140,7 @@ data_summ %>% group_by(stimuli_set_pp) %>% summarise(m = mean(is_correct_avg), s
 ```
 
 ## Mean correct 
+## FIX PLOT STYLE
 
 ```{r}
 # sum
@@ -135,8 +152,8 @@ sum_pp_plot <-
              alpha = 0.3) + 
   stat_summary(fun.data = "mean_cl_boot", 
                position = position_dodge(width = 0.9)) +
-  scale_y_continuous(breaks = seq(0, 24, 4)) +
-  geom_hline(yintercept = 6, linetype = "dashed") +
+  scale_y_continuous(breaks = seq(0, 12, 1)) +
+  geom_hline(yintercept = 6/4, linetype = "dashed") +
   labs(y = "Mean number of correct selections", x = "Phonotactics") +
   theme_bw()
         
@@ -145,20 +162,29 @@ sum_pp_plot
 # proportions
 avg_pp_plot <-  
   data_summ %>% 
-  ggplot(aes(x = stimuli_set_pp, y = is_correct_avg, fill = stimuli_set_pp)) +
-  geom_violin(alpha = 0.3) +
-  geom_dotplot(binaxis = "y", stackdir = "up", dotsize = 0.5, alpha = 0.6) + 
-  stat_summary(fun.data = "mean_cl_boot", size = 0.5, position = position_nudge(x = -0.05, y = 0)) +
-  scale_y_continuous(breaks = seq(0, 1, 0.2)) +
-  scale_fill_manual(values = cb_pal) +
-  geom_hline(yintercept = 0.25, linetype = "dashed") +
+  ggplot(aes(x = stimuli_set_pp, y = is_correct_avg)) +
+  stat_summary(fun.data = "mean_cl_boot", size = 0.5) +
+  ggdist::stat_halfeye(geom = "slab", 
+                       justification = -0.1,
+                       alpha = 0.4) +
+  geom_dotplot(binaxis = "y", 
+               stackdir = "down", 
+               dotsize = 0.5, 
+               alpha = 0.2) + 
+  scale_y_continuous(breaks = seq(0, 1, 0.25)) +
+  geom_hline(yintercept = 1/4, linetype = "dashed") +
   labs(y = "Mean number of correct selections", x = "Phonotactics") +
-  theme_classic() +
+  theme_classic(base_size = 10) + 
   theme(legend.position = "")
-        
+         
 avg_pp_plot
 
+# save tiff
 #ggsave(here("03_output_graphics/plot_pp.tiff"), 
+#       width = 15, height = 8, units = "cm", dpi = 300)
+
+# save png
+#ggsave(here("03_output_graphics/plot_pp.png"), 
 #       width = 15, height = 8, units = "cm", dpi = 300)
 
 # extract the stat_summary from the graph
@@ -191,8 +217,8 @@ stats_pp_summ
 
 ```{r}
 ## random slope and intercept - FAILED TO CONVERGE
-#mod0_cond_freq_exp1 <- 
-#  data_clean_test_exp1 %>% 
+#mod0_freq <- 
+#  data_clean_test %>% 
 #  glmer(is_correct ~ offset(logit(chance_level)) + stimuli_set_pp +
 #                (target_visual|p_n_unique),  
 #              data = .,
