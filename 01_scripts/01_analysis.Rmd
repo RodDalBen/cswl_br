@@ -5,7 +5,7 @@ author: "Rodrigo Dal Ben"
 date: 10/02/2021
 ---
 
-Last update: 2022-09-02
+Last update: 2022-09-12
 
 # Background
 
@@ -15,6 +15,8 @@ Last update: 2022-09-02
 **OSF project**: https://osf.io/6fqzg/
 
 **Feedback and suggestions:** <dalbenwork@gmail.com>
+
+# Notes: Here we perform the data analyses of the *Full dataset* (24 trials per participant) and of the *Half dataset*, which consists of the first trial of each pair for each participant (12 trials). 
 
 # Session info (as of last update)
 
@@ -74,8 +76,13 @@ load(here("02_data/tidy_data_cswl_br.rda"))
 # double check sample size (should be 30)
 data %>% distinct(p_n_unique) %>% count() # 30 participants
 
-# filter first test trial of each pair for each participant
-data_first_trial <- 
+# Full dataset (all test trials)
+data_f <- 
+  data %>% 
+  filter(trial_type == "test cswl")
+
+# Half dataset: filter first test trial of each pair for each participant
+data_h <- 
   data %>% 
   filter(trial_type == "test cswl") %>%
   group_by(p_n_unique, target_audio_cswl) %>%
@@ -85,27 +92,49 @@ data_first_trial <-
 
 # Prepare data
 
+## Full dataset (f)
+
 ```{r}
-# filter test trials, the first trial for each pair, and set index for trials with rt > 3 SDs
-sd_comp <- 
-  data_first_trial %>% 
+# set index for trials with rt > 3 SDs
+sd_comp_f <- 
+  data_f %>% 
   summarise(sd_1 = sd(rt, na.rm = T),
             sd_3 = sd_1*3)
 
-data_clean_test <- 
-  data_first_trial %>% 
-  filter(rt < mean(rt, na.rm = T) + sd_comp$sd_3) # 16 trials (2%) excluded
+data_clean_test_f <- 
+  data_f %>% 
+  filter(rt < mean(rt, na.rm = T) + sd_comp_f$sd_3) # 16 trials (2%) excluded
 
 ## excluded trials summary
-data_clean_test %>% distinct(p_n_unique) %>% count() # 30 participants
-data_clean_test %>% group_by(p_n_unique) %>% summarise(n_trials = n()) # 12 trials, 1 for each pair
+data_clean_test_f %>% distinct(p_n_unique) %>% count() # 30 participants
+data_clean_test_f %>% group_by(p_n_unique) %>% summarise(n_trials = n()) # 24 trials, 1 for each pair
+```
+
+## Half dataset (h)
+
+```{r}
+# set index for trials with rt > 3 SDs
+sd_comp_h <- 
+  data_h %>% 
+  summarise(sd_1 = sd(rt, na.rm = T),
+            sd_3 = sd_1*3)
+
+data_clean_test_h <- 
+  data_h %>% 
+  filter(rt < mean(rt, na.rm = T) + sd_comp_h$sd_3) # 9 trials (2%) excluded
+
+## excluded trials summary
+data_clean_test_h %>% distinct(p_n_unique) %>% count() # 30 participants
+data_clean_test_h %>% group_by(p_n_unique) %>% summarise(n_trials = n()) # 12 trials, 1 for each pair
 ```
 
 # Demographics
 
+Calculated with Full data.
+
 ```{r}
 # summary data
-data_clean_test %>% 
+data_f %>% 
   group_by(p_n_unique) %>% 
   slice_head() %>%
   ungroup() %>% 
@@ -121,22 +150,41 @@ data_clean_test %>%
 
 ## Summary data
 
+### Full data (f)
+
 ```{r}
-# calculating mean for each block
-data_summ <- 
-  data_clean_test %>% 
+# Full data (f)
+data_summ_f <- 
+  data_clean_test_f %>% 
+  group_by(p_n_unique, stimuli_set_pp) %>% 
+  summarise(
+    is_correct_avg = mean(is_correct),
+    is_correct_sum = sum(is_correct),
+    trials_n = 24,
+    rt = mean(rt),
+    size = "Full"
+    ) %>% 
+  ungroup()
+
+# Half data (h)
+data_summ_h <- 
+  data_clean_test_h %>% 
   group_by(p_n_unique, stimuli_set_pp) %>% 
   summarise(
     is_correct_avg = mean(is_correct),
     is_correct_sum = sum(is_correct),
     trials_n = 12,
-    rt = mean(rt)
+    rt = mean(rt),
+    size = "Half"
     ) %>% 
   ungroup()
 
+# combined dataset
+data_summ <- bind_rows(data_summ_f, data_summ_h)
+
 # number of trials and proportion
-data_summ %>% group_by(stimuli_set_pp) %>% summarise(m = mean(is_correct_sum), sd = sd(is_correct_sum))
-data_summ %>% group_by(stimuli_set_pp) %>% summarise(m = mean(is_correct_avg), sd = sd(is_correct_avg))
+data_summ %>% group_by(size, stimuli_set_pp) %>% summarise(m = mean(is_correct_sum), sd = sd(is_correct_sum))
+data_summ %>% group_by(size, stimuli_set_pp) %>% summarise(m = mean(is_correct_avg), sd = sd(is_correct_avg))
 ```
 
 ## Mean correct 
@@ -153,6 +201,7 @@ sum_pp_plot <-
                position = position_dodge(width = 0.9)) +
   scale_y_continuous(breaks = seq(0, 12, 1)) +
   geom_hline(yintercept = 6/4, linetype = "dashed") +
+  facet_wrap(~ size) +
   labs(y = "Mean number of correct selections", x = "Phonotactics") +
   theme_bw()
         
@@ -164,7 +213,7 @@ avg_pp_plot <-
   ggplot(aes(x = stimuli_set_pp, y = is_correct_avg)) +
   stat_summary(fun.data = "mean_cl_boot", size = 0.5) +
   ggdist::stat_halfeye(geom = "slab", 
-                       justification = -0.1,
+                       justification = -0.05,
                        alpha = 0.4) +
   geom_dotplot(binaxis = "y", 
                stackdir = "down", 
@@ -172,6 +221,7 @@ avg_pp_plot <-
                alpha = 0.2) + 
   scale_y_continuous(breaks = seq(0, 1, 0.25)) +
   geom_hline(yintercept = 1/4, linetype = "dashed") +
+  facet_wrap(~ size) +
   labs(y = "Mean number of correct selections", x = "Phonotactics") +
   theme_classic(base_size = 10) + 
   theme(legend.position = "")
@@ -193,16 +243,18 @@ plot_stats <- ggplot_build(avg_pp_plot)$`data`[[2]] # proportions
 
 ## Error patterns
 
+### Full dataset
+
 ```{r}
 # total number of errors
-errors_total <- 
-  data_clean_test %>% 
+errors_total_f <- 
+  data_clean_test_f %>% 
   filter(is_correct == 0) %>% 
   summarise(n_errors = n()) 
 
 # errors by stimuli 
-errors_summ <- 
-  data_clean_test %>% 
+errors_summ_f <- 
+  data_clean_test_f %>% 
   filter(is_correct == 0) %>% 
   group_by(target_audio_cswl, stimuli_set_pp) %>% 
   summarise(summ_errors = n(), 
@@ -211,7 +263,7 @@ errors_summ <-
   ungroup()
 
 # plot
-data_clean_test %>% 
+data_clean_test_f %>% 
   filter(is_correct == 0) %>% 
   group_by(target_audio_cswl, stimuli_set_pp) %>%  
   ggplot(aes(x = target_audio_cswl, fill = stimuli_set_pp)) +
@@ -222,7 +274,42 @@ data_clean_test %>%
   theme_classic()
 
 # save png
-#ggsave(here("03_output_graphics/plot_errors.png"), 
+#ggsave(here("03_output_graphics/plot_errors_full_data.png"), 
+#       width = 15, height = 8, units = "cm", dpi = 300)
+```
+
+### Half dataset
+
+```{r}
+# total number of errors
+errors_total_h <- 
+  data_clean_test_h %>% 
+  filter(is_correct == 0) %>% 
+  summarise(n_errors = n()) 
+
+# errors by stimuli 
+errors_summ_h <- 
+  data_clean_test_h %>% 
+  filter(is_correct == 0) %>% 
+  group_by(target_audio_cswl, stimuli_set_pp) %>% 
+  summarise(summ_errors = n(), 
+            avg_errors = summ_errors/errors_total$n_errors) %>%
+  arrange(summ_errors) %>% 
+  ungroup()
+
+# plot
+data_clean_test_h %>% 
+  filter(is_correct == 0) %>% 
+  group_by(target_audio_cswl, stimuli_set_pp) %>%  
+  ggplot(aes(x = target_audio_cswl, fill = stimuli_set_pp)) +
+  geom_bar() +
+  scale_y_continuous(breaks = seq(0, 14, 2)) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 3)) +
+  labs(y = "Number of incorrect selections", x = "Stimuli") +
+  theme_classic()
+
+# save png
+#ggsave(here("03_output_graphics/plot_errors_half_data.png"), 
 #       width = 15, height = 8, units = "cm", dpi = 300)
 ```
 
@@ -233,7 +320,7 @@ data_clean_test %>%
 ```{r}
 stats_pp_summ <- 
   data_summ %>%
-  group_by(stimuli_set_pp) %>% 
+  group_by(size, stimuli_set_pp) %>% 
   summarise(
     is_corr = mean(is_correct_avg),
     sd = sd(is_correct_avg), 
@@ -245,38 +332,38 @@ stats_pp_summ <-
 stats_pp_summ
 ```
 
-## Inferential
+## Inferential - Full data
 
 ### Frequentist 
 
 ```{r}
 ## random slope and intercept - FAILED TO CONVERGE
-#mod0_freq <- 
-#  data_clean_test %>% 
+#mod0_freq_f <- 
+#  data_clean_test_f %>% 
 #  glmer(is_correct ~ offset(logit(chance_level)) + stimuli_set_pp +
 #                (target_visual|p_n_unique),  
 #              data = .,
 #              family = "binomial")
 
 ## random intercept
-mod1_pp_freq <- 
-  data_clean_test %>% 
+mod1_pp_freq_f <- 
+  data_clean_test_f %>% 
   #mutate(stimuli_set_pp = factor(stimuli_set_pp, levels = c("PP+", "PP-"))) %>% # PP+ as baseline
   glmer(is_correct ~ offset(logit(chance_level)) + stimuli_set_pp +
                 (1|target_visual) + (1|p_n_unique), 
               data = .,
               family = "binomial")
 
-summary(mod1_pp_freq)
-confint(mod1_pp_freq, method = "Wald")
-tab_model(mod1_pp_freq, title = "Fixed and random effects for Frequentist analysis [selection ~ chance level + phonotactics + (1|stimuli) + (1|participant)]", show.re.var = T, show.icc = T, show.p = F)#, file = here("03_output_graphics/mod_pp_freq.doc"))
+summary(mod1_pp_freq_f)
+confint(mod1_pp_freq_f, method = "Wald")
+tab_model(mod1_pp_freq_f, title = "Fixed and random effects for Frequentist analysis [selection ~ chance level + phonotactics + (1|stimuli) + (1|participant)] - Full", show.re.var = T, show.icc = T, show.p = F)#, file = here("03_output_graphics/mod_pp_freq.doc"))
 ```
 
 ### Bayesian
 
 ```{r}
-mod0_pp_bay <- 
-  data_clean_test %>% 
+mod0_pp_bay_f <- 
+  data_clean_test_f %>% 
   #mutate(stimuli_set_pp = factor(stimuli_set_pp, levels = c("PP+", "PP-"))) %>% # PP+ as baseline
   brm(is_correct ~ offset(logit(chance_level)) + stimuli_set_pp + (target_visual|p_n_unique),
             data = .,
@@ -285,11 +372,68 @@ mod0_pp_bay <-
             chains = 4
             )
 
-summary(mod0_pp_bay)
-tab_model(mod0_pp_bay, title = "Fixed and random effects Bayesian analysis [selection ~ chance level + phonotactics + (stimuli|participant)]", show.re.var = T, show.icc = T)#, file = here("03_output_graphics/mod_pp_bay.doc"))
+summary(mod0_pp_bay_f)
+tab_model(mod0_pp_bay_f, title = "Fixed and random effects Bayesian analysis [selection ~ chance level + phonotactics + (stimuli|participant)] - Full", show.re.var = T, show.icc = T)#, file = here("03_output_graphics/mod_pp_bay.doc"))
 
 # let me know when model is done running
 beep(sound = 1, expr = NULL)
+```
+
+## Inferential - Half data
+
+### Frequentist 
+
+```{r}
+## random slope and intercept - FAILED TO CONVERGE
+#mod0_freq_h <- 
+#  data_clean_test_h %>% 
+#  glmer(is_correct ~ offset(logit(chance_level)) + stimuli_set_pp +
+#                (target_visual|p_n_unique),  
+#              data = .,
+#              family = "binomial")
+
+## random intercept
+mod1_pp_freq_h <- 
+  data_clean_test_h %>% 
+  #mutate(stimuli_set_pp = factor(stimuli_set_pp, levels = c("PP+", "PP-"))) %>% # PP+ as baseline
+  glmer(is_correct ~ offset(logit(chance_level)) + stimuli_set_pp +
+                (1|target_visual) + (1|p_n_unique), 
+              data = .,
+              family = "binomial")
+
+summary(mod1_pp_freq_h)
+confint(mod1_pp_freq_h, method = "Wald")
+tab_model(mod1_pp_freq_h, title = "Fixed and random effects for Frequentist analysis [selection ~ chance level + phonotactics + (1|stimuli) + (1|participant)] - Half", show.re.var = T, show.icc = T, show.p = F)#, file = here("03_output_graphics/mod_pp_freq.doc"))
+```
+
+### Bayesian
+
+```{r}
+mod0_pp_bay_h <- 
+  data_clean_test_h %>% 
+  #mutate(stimuli_set_pp = factor(stimuli_set_pp, levels = c("PP+", "PP-"))) %>% # PP+ as baseline
+  brm(is_correct ~ offset(logit(chance_level)) + stimuli_set_pp + (target_visual|p_n_unique),
+            data = .,
+            family = "bernoulli",
+            iter = 4000,
+            chains = 4
+            )
+
+summary(mod0_pp_bay_h)
+tab_model(mod0_pp_bay_h, title = "Fixed and random effects Bayesian analysis [selection ~ chance level + phonotactics + (stimuli|participant)] - Half", show.re.var = T, show.icc = T)#, file = here("03_output_graphics/mod_pp_bay.doc"))
+
+# let me know when model is done running
+beep(sound = 1, expr = NULL)
+```
+
+## Combining models' output
+
+```{r}
+# freq
+tab_model(mod1_pp_freq_f, mod1_pp_freq_h, title = "Fixed and random effects for Frequentist analysis [selection ~ chance level + phonotactics + (1|stimuli) + (1|participant)] - Full & Half", show.re.var = T, show.icc = T, show.p = F)#, file = here("03_output_graphics/mod_pp_freq.doc"))
+
+# bayesian
+tab_model(mod0_pp_bay_f, mod0_pp_bay_h, title = "Fixed and random effects Bayesian analysis [selection ~ chance level + phonotactics + (stimuli|participant)] - Full & Half", show.re.var = T, show.icc = T)#, file = here("03_output_graphics/mod_pp_bay.doc"))
 ```
 
 # THE END 
